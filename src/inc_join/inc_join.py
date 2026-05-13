@@ -422,6 +422,11 @@ def inc_join(
     # Get column references after ensuring they exist
     inc_col_a = F.col(inc_col_a_name)
     inc_col_b = F.col(inc_col_b_name)
+    if settings.time_uom == "day":
+        if isinstance(a_col_type, TimestampType):
+            inc_col_a = F.to_date(inc_col_a)
+        if isinstance(b_col_type, TimestampType):
+            inc_col_b = F.to_date(inc_col_b)
 
     # step 8: Restore one of the original join columns, give preference to df_a.join_col.
     if join_cols_list:
