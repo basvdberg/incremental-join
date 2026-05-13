@@ -21,6 +21,8 @@
     - [2. A is late](#2-a-is-late)
     - [3. B is late](#3-b-is-late)
     - [4. A is timed out](#4-a-is-timed-out)
+    - [5. A is waiting](#5-a-is-waiting)
+    - [6. Unmatched B (not_matched)](#6-unmatched-b-not_matched)
 - [Improvements](#improvements)
 
 # Dependencies 
@@ -168,7 +170,7 @@ For example: we want to have the output of the inc_join for 2025-03-07 (daily), 
 
 # Implementation
 
-Our implementation is split up into 4 scenarios, each having a different use of the **sliding join window** and **output window**. We assume that time_uom equals day (to keep our documentation simple). 
+Our implementation classifies each output row into scenarios documented below (same-time, late arrivals, timed out / waiting, and unmatched **B** in full outer joins). We assume that time_uom equals day (to keep our documentation simple). 
 
 - `df_output:Dataframe` is the output dataset, where RecDate is always contained in the output window. 
 - `A` stands for a record in df_a  
@@ -176,7 +178,7 @@ Our implementation is split up into 4 scenarios, each having a different use of 
 - `delta_arrival_time:int` is defined as B.RecDate - A.RecDate in days (default uom).
 - `WaitingTime:int` (present only when `include_waiting=True`) is defined for unmatched A records and equals the number of days between A.RecDate
   and `output_window_end`, capped by `max_waiting_time`.
-- `JoinType:int` contains the numbered scenario code applied to each record (1 = same_time, 2 = a_late, 3 = b_late, 4 = a_timed_out, 5 = a_waiting).
+- `JoinType:string` names the disposition for each row: `"same_time"`, `"a_late"`, `"b_late"`, `"a_timed_out"`, `"a_waiting"`, `"not_matched"`.
 - Join keys (from `join_cols`) are reintroduced as `coalesce(df_a.key, df_b.key)` so downstream consumers
   can rely on the original column names.
 - `output_select:str` lets you control which columns the output contains. Use comma separated tokens such as
@@ -198,7 +200,7 @@ A and B arrived on the same day within the output window.
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = max(df_A.RecDate, df_B.RecDate)`
-- `JoinType = 1` (same_time)
+- `JoinType = "same_time"`
 
 
 ### 2. A is late
@@ -210,7 +212,7 @@ A arrived later than B. We need to look back to find B (using look back time).
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = df_A.RecDate`
-- `JoinType = 2` (a_late)
+- `JoinType = "a_late"`
 
 ### 3. B is late
 
@@ -224,7 +226,7 @@ We cannot extend the filter that is based on output window to the future, becaus
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = df_B.RecDate`
-- `JoinType = 3` (b_late)
+- `JoinType = "b_late"`
 
 ### 4. A is timed out
 
@@ -235,7 +237,20 @@ We cannot extend the filter that is based on output window to the future, becaus
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = df_A.RecDate + WaitingTime` (when `WaitingTime` is computed, i.e. when `include_waiting=True`)
-- `JoinType = 4` (a_timed_out, also assigned whenever `WaitingTime == max_waiting_time`)
+- `JoinType = "a_timed_out"` (also whenever `WaitingTime == max_waiting_time`)
+
+### 5. A is waiting
+
+- `B.RecDate is None` (no matching record found in df_B yet).
+- `WaitingTime < max_waiting_time` and `max_waiting_time > 0`.
+- Included in the output only when `include_waiting=True`; otherwise these rows are filtered out until they become timed out or matched.
+- `JoinType = "a_waiting"`
+
+### 6. Unmatched B (not_matched)
+
+- Occurs mainly with `full_outer` (or equivalent) when a row from **B** has **no matching row in A** after the join keys and sliding window are applied: the **A** side of the row is null.
+- `DiffArrivalTime` is null; previously such rows had no distinct disposition label.
+- `JoinType = "not_matched"`
 
 # Improvements
 
