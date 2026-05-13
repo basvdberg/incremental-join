@@ -222,7 +222,7 @@ We cannot extend the filter that is based on output window to the future, becaus
 
 - `delta_arrival_time > 0` 
 - `B.RecDate is contained in the output window` 
-- `A.RecDate is contained in the output window extended with -max_waiting_time + 1` So A might have arrived before the beginning of the output window. +1 here is done to exclude the timed out records, which is the next scenario. 
+- `A.RecDate is contained in the output window extended with -max_waiting_time` (the window start moves earlier by `max_waiting_time`). **Boundary:** `A.RecDate = output_window_start - max_waiting_time` with `B.RecDate = output_window_start` is a valid `b_late` match; 
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = df_B.RecDate`
@@ -233,7 +233,7 @@ We cannot extend the filter that is based on output window to the future, becaus
 - `B.RecDate is None (no matching record found in df_B)` 
 - `delta_arrival_time is None (because B.RecDate is None)`.   
 - There is no match found in the above scenarios
-- `A.RecDate is contained in the output window shifted with -max_waiting_time` which means that both start and end date are reduced by max_waiting_time.
+- `A.RecDate + max_waiting_time <= output_window_end` Rows above this bound (`A.RecDate + max_waiting_time > output_window_end`) have `WaitingTime < max_waiting_time` at the window end and are classified as `a_waiting` when `include_waiting=True`.
 - if `enforce_sliding_join_window` then 
   - `B.RecDate is contained in the sliding join window of df_a.RecDate`
 - `Output.RecDate = df_A.RecDate + WaitingTime` (when `WaitingTime` is computed, i.e. when `include_waiting=True`)
