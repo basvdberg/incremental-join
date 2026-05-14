@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from pyspark.sql import SparkSession
 
@@ -17,19 +17,29 @@ def test_same_calendar_day_different_times_yields_same_time_join_type(
     Same calendar day at 09:00 (A) and 23:00 (B) must classify as same_time with
     DiffArrivalTime == 0 after post-join F.to_date rebinding (see inc_join step 8).
 
-    Spark compares ``timestamp <= date`` using the date at start-of-day, so an
-    ``output_window_end`` of ``date(2025, 3, 6)`` would incorrectly exclude
-    ``2025-03-06 23:00:00`` from the pre-join filters; use the following day as the
-    inclusive end for this fixture.
+    Timestamp-fixture best practice
+    -------------------------------
+    Spark's timestamp semantics (parsing literals, ``F.to_date``, ``F.datediff``
+    on timestamps) are governed by ``spark.sql.session.timeZone``. ``conftest.py``
+    pins that to ``UTC``. We pair it here with **timezone-aware** Python
+    datetimes (``tzinfo=timezone.utc``), so the values do not silently pick up
+    the driver's local zone via ``createDataFrame``. Aligning the Python tzinfo
+    with the session time zone makes the wall-clock date in the fixture match
+    the calendar date Spark uses for ``to_date``/``datediff``, removing any
+    dependency on the host or CI machine's local time zone.
+
+    The ``output_window_end`` uses the day after the fixture date because Spark
+    compares ``timestamp <= date`` at start-of-day; a same-day end would
+    incorrectly exclude ``23:00:00``.
     """
     schema = "TrxId INT, RecDate TIMESTAMP"
     day = date(2025, 3, 6)
     df_a = spark.createDataFrame(
-        [(1, datetime(2025, 3, 6, 9, 0, 0))],
+        [(1, datetime(2025, 3, 6, 9, 0, 0, tzinfo=timezone.utc))],
         schema,
     )
     df_b = spark.createDataFrame(
-        [(1, datetime(2025, 3, 6, 23, 0, 0))],
+        [(1, datetime(2025, 3, 6, 23, 0, 0, tzinfo=timezone.utc))],
         schema,
     )
     out = inc_join(

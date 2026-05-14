@@ -92,18 +92,24 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
 
 @pytest.fixture(scope="session")
 def spark() -> SparkSession:
+    # Pin the Spark session time zone to UTC for tests. Best practice in Spark:
+    # all timestamp semantics (parsing, F.to_date, F.datediff on timestamps,
+    # session-local rendering) flow through spark.sql.session.timeZone, so fixing
+    # it to UTC makes tests reproducible regardless of the host/CI machine's
+    # local time zone and the JVM default. Construct timestamp fixtures with
+    # timezone-aware datetimes (tzinfo=timezone.utc) so they don't pick up the
+    # driver's local zone either.
     session = (
         SparkSession.builder.master("local[1]")
         .appName("inc_join_tests")
         .config("spark.ui.showConsoleProgress", "false")
-        .config("spark.sql.session.timeZone", "Europe/Amsterdam")
+        .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "false")
         .config("spark.driver.memory", "1g")
         .config("spark.executor.memory", "1g")
         .getOrCreate()
     )
-    # Ensure timezone is set (redundant but ensures it's applied)
-    session.conf.set("spark.sql.session.timeZone", "Europe/Amsterdam")
+    session.conf.set("spark.sql.session.timeZone", "UTC")
     yield session
     session.stop()
